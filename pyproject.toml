@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "osint_tool"
+version = "0.1.0"
+description = "OSINT framework written in Python"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "typer",
+    "rich",
+    "httpx",
+    "dnspython",
+]
+
+[project.scripts]
+sentinel = "sentinel.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
