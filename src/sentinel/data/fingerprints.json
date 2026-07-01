@@ -1,0 +1,12 @@
+{
+    "Cloudflare": [
+        "cf-ray",
+        "cf-cache-status"
+    ],
+    "nginx": [
+        "server: nginx"
+    ],
+    "Apache": [
+        "server: apache"
+    ]
+}

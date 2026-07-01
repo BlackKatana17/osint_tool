@@ -1,45 +1,108 @@
-from rich.console import Console
-from rich.table import Table
+from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from rich.console import Console
+
+from sentinel.modules.asn import ASNScanner
 from sentinel.modules.dns import DNSScanner
-from sentinel.core.analyzer import DNSAnalyzer
+from sentinel.modules.http import HTTPScanner
+from sentinel.modules.ip import IPScanner
+from sentinel.modules.tls import TLSScanner
+from sentinel.modules.whois import WhoisScanner
+
+from sentinel.modules.crtsh import run as crtsh_scan
+from sentinel.modules.robots import run as robots_scan
+from sentinel.modules.securitytxt import run as securitytxt_scan
+from sentinel.modules.sitemap import run as sitemap_scan
 
 console = Console()
 
 
 class Engine:
 
-    def run(self, target: str):
-        
-        
-        scanner = DNSScanner()
+    def __init__(self):
 
-        results = scanner.scan(target)
-        summary = DNSAnalyzer.summarize(results)
+        self.modules = {
+            "dns": DNSScanner(),
+            "http": HTTPScanner(),
+            "tls": TLSScanner(),
+            "whois": WhoisScanner(),
+            "ip": IPScanner(),
+            "asn": ASNScanner(),
 
-        console.rule("[bold cyan]DNS Summary")
+            "crtsh": crtsh_scan,
+            "robots": robots_scan,
+            "securitytxt": securitytxt_scan,
+            "sitemap": sitemap_scan,
+        }
 
-        for record, count in summary.items():
-            console.print(f"{record:<5} : {count}")
+    def _execute_module(self, name: str, scanner, target: str):
 
-        table = Table(title=f"DNS Records - {target}")
+        started = time.perf_counter()
 
-        table.add_column("Type", style="cyan", no_wrap=True)
-        table.add_column("Valeur", style="green")
+        try:
 
-        for record_type, values in results.items():
+            result = scanner.scan(target)
 
-            if values:
-                for value in values:
-                    table.add_row(record_type, value)
-            else:
-                table.add_row(record_type, "-")
+            elapsed = round((time.perf_counter() - started) * 1000)
 
-        console.print(table)
+            return (
+                name,
+                {
+                    "success": True,
+                    "time_ms": elapsed,
+                    "data": result,
+                },
+            )
 
-        services = DNSAnalyzer.detect_services(results["TXT"])
+        except Exception as exc:
 
-        console.rule("[bold green]Detected Services")
+            elapsed = round((time.perf_counter() - started) * 1000)
 
-        for service in services:
-            console.print(f"✓ {service}")
+            return (
+                name,
+                {
+                    "success": False,
+                    "time_ms": elapsed,
+                    "error": str(exc),
+                    "data": {},
+                },
+            )
+
+    def run(self, target: str) -> dict:
+
+        started = time.perf_counter()
+
+        console.rule(f"[cyan]Scanning {target}")
+
+        results = {
+            "target": target,
+            "started": time.time(),
+            "modules": {},
+        }
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+
+            futures = [
+                executor.submit(
+                    self._execute_module,
+                    name,
+                    scanner,
+                    target,
+                )
+                for name, scanner in self.modules.items()
+            ]
+
+            for future in as_completed(futures):
+
+                name, module_result = future.result()
+
+                results["modules"][name] = module_result
+
+        results["duration_ms"] = round(
+            (time.perf_counter() - started) * 1000
+        )
+
+        return results

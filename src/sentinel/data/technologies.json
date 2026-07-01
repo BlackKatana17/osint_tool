@@ -1,0 +1,12 @@
+{
+    "WordPress": [
+        "wp-content",
+        "wp-includes"
+    ],
+    "Drupal": [
+        "drupal"
+    ],
+    "Joomla": [
+        "joomla"
+    ]
+}
