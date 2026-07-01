@@ -12,10 +12,10 @@ from sentinel.modules.ip import IPScanner
 from sentinel.modules.tls import TLSScanner
 from sentinel.modules.whois import WhoisScanner
 
-from sentinel.modules.crtsh import run as crtsh_scan
-from sentinel.modules.robots import run as robots_scan
-from sentinel.modules.securitytxt import run as securitytxt_scan
-from sentinel.modules.sitemap import run as sitemap_scan
+from sentinel.modules.crtsh import CRTSHScanner
+from sentinel.modules.robots import RobotsScanner
+from sentinel.modules.securitytxt import SecurityTXTScanner
+from sentinel.modules.sitemap import SitemapScanner
 
 console = Console()
 
@@ -32,10 +32,10 @@ class Engine:
             "ip": IPScanner(),
             "asn": ASNScanner(),
 
-            "crtsh": crtsh_scan,
-            "robots": robots_scan,
-            "securitytxt": securitytxt_scan,
-            "sitemap": sitemap_scan,
+            "crtsh": CRTSHScanner(),
+            "robots": RobotsScanner(),
+            "securitytxt": SecurityTXTScanner(),
+            "sitemap": SitemapScanner(),
         }
 
     def _execute_module(self, name: str, scanner, target: str):
@@ -43,33 +43,26 @@ class Engine:
         started = time.perf_counter()
 
         try:
-
             result = scanner.scan(target)
 
             elapsed = round((time.perf_counter() - started) * 1000)
 
-            return (
-                name,
-                {
-                    "success": True,
-                    "time_ms": elapsed,
-                    "data": result,
-                },
-            )
+            return name, {
+                "success": True,
+                "time_ms": elapsed,
+                "data": result,
+            }
 
         except Exception as exc:
 
             elapsed = round((time.perf_counter() - started) * 1000)
 
-            return (
-                name,
-                {
-                    "success": False,
-                    "time_ms": elapsed,
-                    "error": str(exc),
-                    "data": {},
-                },
-            )
+            return name, {
+                "success": False,
+                "time_ms": elapsed,
+                "error": str(exc),
+                "data": {},
+            }
 
     def run(self, target: str) -> dict:
 
@@ -86,23 +79,15 @@ class Engine:
         with ThreadPoolExecutor(max_workers=8) as executor:
 
             futures = [
-                executor.submit(
-                    self._execute_module,
-                    name,
-                    scanner,
-                    target,
-                )
+                executor.submit(self._execute_module, name, scanner, target)
                 for name, scanner in self.modules.items()
             ]
 
             for future in as_completed(futures):
 
                 name, module_result = future.result()
-
                 results["modules"][name] = module_result
 
-        results["duration_ms"] = round(
-            (time.perf_counter() - started) * 1000
-        )
+        results["duration_ms"] = round((time.perf_counter() - started) * 1000)
 
         return results

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any
 
 import requests
 
@@ -10,52 +11,56 @@ class CRTSHScanner:
     URL = "https://crt.sh/"
 
     def __init__(self):
-
         self.session = requests.Session()
-
         self.session.headers.update(
             {
                 "User-Agent": "Sentinel OSINT/1.0"
             }
         )
 
-    def _query(self, domain: str):
+    def _query(self, domain: str) -> list[dict[str, Any]]:
+        try:
+            response = self.session.get(
+                self.URL,
+                params={
+                    "q": f"%.{domain}",
+                    "output": "json",
+                },
+                timeout=15,
+            )
 
-        response = self.session.get(
-            self.URL,
-            params={
-                "q": f"%.{domain}",
-                "output": "json",
-            },
-            timeout=15,
-        )
+            response.raise_for_status()
 
-        response.raise_for_status()
+            data = response.json()
 
-        return response.json()
+            return data if isinstance(data, list) else []
+
+        except (requests.RequestException, ValueError):
+            return []
 
     @staticmethod
-    def _normalize(records):
+    def _normalize(records: list[dict[str, Any]]):
 
         subdomains = set()
-
         issuers = []
-
         serials = set()
 
         for record in records:
 
-            serial = record.get("serial_number")
+            if not isinstance(record, dict):
+                continue
 
+            serial = record.get("serial_number")
             if serial:
                 serials.add(serial)
 
             issuer = record.get("issuer_name")
-
             if issuer:
                 issuers.append(issuer)
 
             value = record.get("name_value", "")
+            if not value:
+                continue
 
             for host in value.splitlines():
 
@@ -82,21 +87,15 @@ class CRTSHScanner:
         subdomains, issuers, certs = self._normalize(records)
 
         wildcard = [
-            host
-            for host in subdomains
-            if "*" in host
+            host for host in subdomains if host.startswith("*")
         ]
 
         return {
-
+            "target": target,
             "certificates": certs,
-
             "subdomains": subdomains,
-
             "count": len(subdomains),
-
             "wildcards": wildcard,
-
             "issuers": [
                 {
                     "name": issuer,

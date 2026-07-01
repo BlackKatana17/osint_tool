@@ -1,139 +1,134 @@
-from __future__ import annotations
-
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
+from rich.panel import Panel
 
 console = Console()
 
 
 class Reporter:
 
-    def __init__(self, results: dict):
+    def __init__(self, result: dict):
+        self.result = result
+        self.modules = result.get("modules", {})
 
-        self.results = results
+    def render(self):
 
-    def display(self) -> None:
+        console.rule(f"[bold cyan]Scan Report : {self.result.get('target')}")
 
-        self._header()
+        self._render_dns()
+        self._render_http()
+        self._render_tls()
+        self._render_services()
 
-        self._summary()
+    # ---------------- DNS ----------------
+    def _render_dns(self):
 
-        self._modules()
+        dns = self.modules.get("dns", {}).get("data", {})
 
-    def _header(self):
+        if not dns:
+            return
 
-        target = self.results["target"]
+        table = Table(title="DNS Records")
 
-        duration = self.results["duration_ms"]
+        table.add_column("Type", style="cyan")
+        table.add_column("Value")
 
-        console.print()
+        for record_type, values in dns.items():
 
-        console.print(
-            Panel.fit(
-                f"[bold cyan]{target}[/]\n\n"
-                f"Scan completed in [green]{duration} ms[/]",
-                title="Sentinel",
-                border_style="cyan",
-            )
-        )
+            if isinstance(values, list):
 
-    def _summary(self):
-
-        table = Table(title="Summary")
-
-        table.add_column("Module", style="cyan")
-        table.add_column("Status")
-        table.add_column("Time")
-        table.add_column("Items")
-
-        for module, result in sorted(
-            self.results["modules"].items()
-        ):
-
-            status = (
-                "[green]OK[/]"
-                if result["success"]
-                else "[red]FAILED[/]"
-            )
-
-            data = result["data"]
-
-            if isinstance(data, dict):
-
-                count = len(data)
-
-            elif isinstance(data, list):
-
-                count = len(data)
+                for v in values:
+                    table.add_row(record_type, str(v))
 
             else:
+                table.add_row(record_type, str(values))
 
-                count = 1 if data else 0
+        console.print(Panel(table, title="DNS Summary"))
 
-            table.add_row(
-                module.upper(),
-                status,
-                f'{result["time_ms"]} ms',
-                str(count),
-            )
+    # ---------------- HTTP ----------------
+    def _render_http(self):
 
-        console.print()
+        http = self.modules.get("http", {}).get("data", {})
+
+        if not http:
+            return
+
+        panel = Panel.fit(
+            f"""
+[cyan]Status[/cyan]      : {http.get("status")}
+[cyan]URL[/cyan]         : {http.get("url")}
+[cyan]Response[/cyan]    : {http.get("elapsed_ms")} ms
+[cyan]Server[/cyan]      : {http.get("server")}
+            """,
+            title="HTTP",
+        )
+
+        console.print(panel)
+
+        headers = http.get("headers", {})
+
+        table = Table(title="Security Headers")
+        table.add_column("Header")
+        table.add_column("Status")
+
+        for k, v in headers.items():
+
+            if isinstance(v, bool):
+                table.add_row(k, "✓" if v else "✗")
+            else:
+                table.add_row(k, str(v))
 
         console.print(table)
 
-    def _modules(self):
+    # ---------------- TLS ----------------
+    def _render_tls(self):
 
-        for module, result in sorted(
-            self.results["modules"].items()
-        ):
+        tls = self.modules.get("tls", {}).get("data", {})
 
-            console.print()
+        if not tls:
+            return
 
-            console.rule(f"[cyan]{module.upper()}")
+        panel = Panel.fit(
+            f"""
+[cyan]Protocol[/cyan] : {tls.get("protocol")}
+[cyan]Cipher[/cyan]   : {tls.get("cipher")}
+[cyan]Expires[/cyan]  : {tls.get("expires")}
+[cyan]Issuer[/cyan]   : {tls.get("issuer", {}).get("commonName")}
+            """,
+            title="TLS",
+        )
 
-            if not result["success"]:
+        console.print(panel)
 
-                console.print(
-                    f"[red]{result['error']}[/]"
-                )
+    # ---------------- SERVICES ----------------
+    def _render_services(self):
 
-                continue
+        http = self.modules.get("http", {}).get("data", {})
+        headers = http.get("headers", {}) if http else {}
 
-            data = result["data"]
+        services = []
 
-            if isinstance(data, dict):
+        fingerprints = {
+            "cloudflare": "Cloudflare",
+            "google": "Google",
+            "amazon": "AWS",
+            "stripe": "Stripe",
+            "hubspot": "HubSpot",
+        }
 
-                table = Table(show_header=False)
+        for k, v in headers.items():
 
-                table.add_column(style="cyan")
+            for key, service in fingerprints.items():
 
-                table.add_column()
+                if isinstance(v, str) and key in v.lower():
+                    services.append(service)
 
-                for key, value in data.items():
+        if not services:
+            return
 
-                    if isinstance(value, list):
-
-                        value = ", ".join(
-                            str(v) for v in value
-                        )
-
-                    table.add_row(
-                        str(key),
-                        str(value),
-                    )
-
-                console.print(table)
-
-            elif isinstance(data, list):
-
-                for value in data:
-
-                    console.print(
-                        f"• {value}"
-                    )
-
-            else:
-
-                console.print(data)
+        console.print(
+            Panel(
+                "\n".join(f"✓ {s}" for s in sorted(set(services))),
+                title="Detected Services",
+            )
+        )
